@@ -1,0 +1,13 @@
+{
+  "name": "SkyStream Analytics",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {"ghcr.io/devcontainers/features/docker-in-docker:2": {}},
+  "forwardPorts": [3000, 8000],
+  "portsAttributes": {
+    "3000": {"label": "SkyStream Dashboard", "onAutoForward": "notify"},
+    "8000": {"label": "FastAPI", "onAutoForward": "silent"}
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start.sh",
+  "remoteUser": "vscode"
+}

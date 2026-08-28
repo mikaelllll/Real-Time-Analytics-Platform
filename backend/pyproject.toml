@@ -1,0 +1,30 @@
+[project]
+name = "skystream-backend"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = [
+  "aiokafka==0.12.0",
+  "asyncpg==0.30.0",
+  "fastapi==0.115.12",
+  "httpx==0.28.1",
+  "pydantic-settings==2.9.1",
+  "redis==6.1.0",
+  "sqlalchemy==2.0.41",
+  "structlog==25.3.0",
+  "uvicorn[standard]==0.34.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.5", "pytest-asyncio==0.26.0", "ruff==0.11.10"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
