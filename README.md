@@ -50,7 +50,7 @@ flowchart LR
   W --> U[React dashboard]
 ```
 
-Redpanda supplies the Kafka-compatible broker while remaining practical inside a Codespace. Aircraft states use ICAO24 identifiers as partition keys, preserving per-aircraft ordering. Redis serves the current dashboard snapshot with low latency, while PostgreSQL persists collection-level history.
+Redpanda supplies the Kafka-compatible broker while remaining practical inside a Codespace. Events use their collection ID as the partition key, keeping every global snapshot and its completion boundary ordered together. Redis serves the current dashboard snapshot with low latency, while PostgreSQL persists collection-level history.
 
 ## Documentation
 
@@ -66,7 +66,13 @@ Python 3.12 · FastAPI · asyncio · Kafka/Redpanda · Redis · PostgreSQL · SQ
 
 ## Quality controls
 
-CI runs backend linting and tests, builds the TypeScript frontend, and verifies both container images on pushes, pull requests, and manual dispatch. Runtime services include health checks, bounded external timeouts, structured JSON logs, restart policies, non-root backend execution, and graceful shutdown.
+CI runs backend linting, formatting, tests and dependency auditing; frontend linting, formatting, production compilation and dependency auditing; and a health-gated Compose smoke test on pushes, pull requests, and manual dispatch. Runtime services include dependency-aware health checks, bounded external timeouts, structured JSON logs, restart policies, non-root backend execution, and graceful shutdown. Dependabot monitors Python, npm, Docker, and GitHub Actions dependencies.
+
+The event consumer commits Kafka offsets only after a complete collection is aggregated and persisted. Invalid external rows are isolated, incomplete collections are bounded, and provider failures retain the last valid data while visibly marking the dashboard degraded.
+
+## Data and privacy
+
+SkyStream processes public OpenSky telemetry and does not accept user uploads or personal information. Redis holds the current dashboard snapshot; PostgreSQL stores aggregate collection counts and provider latency rather than individual aircraft history. These local Docker volumes belong to the Codespace and disappear when that Codespace is deleted unless someone explicitly exports them.
 
 ## License
 
