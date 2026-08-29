@@ -8,7 +8,7 @@ from aiokafka import AIOKafkaConsumer
 
 from app.core.config import Settings
 from app.db import CollectionRun, Session
-from app.models import AircraftState, DashboardSnapshot
+from app.models import AircraftState, DashboardSnapshot, MapAircraft
 from app.services.store import SnapshotStore
 
 log = structlog.get_logger()
@@ -83,9 +83,16 @@ class AircraftEventProcessor:
         altitudes = [state.altitude_m for state in airborne if state.altitude_m is not None]
         speeds = [state.velocity_ms * 3.6 for state in airborne if state.velocity_ms is not None]
         countries = Counter(state.origin_country for state in states)
-        mappable = [state for state in states if state.latitude is not None and state.longitude is not None][:1500]
+        # Every position supplied by OpenSky is retained. The dashboard renders these through
+        # Leaflet's canvas renderer, avoiding thousands of individual SVG/DOM nodes.
+        mappable = [
+            MapAircraft.model_validate(state.model_dump(), from_attributes=True)
+            for state in states
+            if state.latitude is not None and state.longitude is not None
+        ]
         return DashboardSnapshot(
-            status="healthy", aircraft_tracked=len(states), airborne=len(airborne),
+            status="healthy", aircraft_tracked=len(states),
+            aircraft_with_position=len(mappable), airborne=len(airborne),
             on_ground=len(states) - len(airborne), countries=len(countries),
             average_altitude_m=round(sum(altitudes) / len(altitudes), 1) if altitudes else 0,
             average_speed_kmh=round(sum(speeds) / len(speeds), 1) if speeds else 0,
