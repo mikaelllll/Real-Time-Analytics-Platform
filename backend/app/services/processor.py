@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
@@ -21,6 +22,8 @@ class AircraftEventProcessor:
         self._consumer: AIOKafkaConsumer | None = None
         self._collections: dict[str, list[AircraftState]] = defaultdict(list)
         self._completed: dict[str, tuple[int, float]] = {}
+        self._collection_started: dict[str, float] = {}
+        self.ready = asyncio.Event()
 
     async def start(self) -> None:
         self._consumer = AIOKafkaConsumer(
@@ -31,51 +34,68 @@ class AircraftEventProcessor:
             enable_auto_commit=False,
             value_deserializer=lambda value: json.loads(value.decode()),
         )
-        for attempt in range(10):
-            try:
-                await self._consumer.start()
-                break
-            except Exception as exc:
-                if attempt == 9:
-                    raise
-                log.warning("consumer_not_ready", attempt=attempt + 1, error=str(exc))
-                await asyncio.sleep(2)
-        async for message in self._consumer:
-            await self._handle(message.value)
-            await self._consumer.commit()
+        consumer_started = False
+        try:
+            for attempt in range(10):
+                try:
+                    await self._consumer.start()
+                    consumer_started = True
+                    break
+                except Exception as exc:
+                    if attempt == 9:
+                        raise
+                    log.warning("consumer_not_ready", attempt=attempt + 1, error=str(exc))
+                    await asyncio.sleep(2)
+            self.ready.set()
+            async for message in self._consumer:
+                if await self._handle(message.value):
+                    await self._consumer.commit()
+        finally:
+            if consumer_started:
+                await self._consumer.stop()
 
-    async def stop(self) -> None:
-        if self._consumer:
-            await self._consumer.stop()
-
-    async def _handle(self, event: dict) -> None:
+    async def _handle(self, event: dict) -> bool:
         collection_id = event["collection_id"]
+        self._prune_incomplete_collections()
+        self._collection_started.setdefault(collection_id, time.monotonic())
         if event["type"] == "aircraft_state":
             self._collections[collection_id].append(AircraftState.model_validate(event["data"]))
-            await self._finalise_if_complete(collection_id)
-            return
+            return await self._finalise_if_complete(collection_id)
         if event["type"] != "collection_complete":
-            return
+            return True
         self._completed[collection_id] = (int(event["expected_count"]), float(event["latency_ms"]))
-        await self._finalise_if_complete(collection_id)
+        return await self._finalise_if_complete(collection_id)
 
-    async def _finalise_if_complete(self, collection_id: str) -> None:
+    async def _finalise_if_complete(self, collection_id: str) -> bool:
         completion = self._completed.get(collection_id)
         if completion is None or len(self._collections[collection_id]) < completion[0]:
-            return
+            return False
         expected_count, latency = self._completed.pop(collection_id)
         states = self._collections.pop(collection_id)
+        self._collection_started.pop(collection_id, None)
         snapshot = self.build_snapshot(states[:expected_count], latency, self.settings.collection_interval_seconds)
         await self.store.save(snapshot)
         async with Session() as session:
-            session.add(CollectionRun(
-                aircraft_count=snapshot.aircraft_tracked,
-                airborne_count=snapshot.airborne,
-                country_count=snapshot.countries,
-                provider_latency_ms=snapshot.provider_latency_ms or 0,
-            ))
+            session.add(
+                CollectionRun(
+                    aircraft_count=snapshot.aircraft_tracked,
+                    airborne_count=snapshot.airborne,
+                    country_count=snapshot.countries,
+                    provider_latency_ms=snapshot.provider_latency_ms or 0,
+                )
+            )
             await session.commit()
         log.info("collection_processed", collection_id=collection_id, aircraft=len(states))
+        return True
+
+    def _prune_incomplete_collections(self) -> None:
+        cutoff = time.monotonic() - max(300, self.settings.collection_interval_seconds * 3)
+        stale_ids = [identifier for identifier, started in self._collection_started.items() if started < cutoff]
+        for identifier in stale_ids:
+            self._collection_started.pop(identifier, None)
+            self._collections.pop(identifier, None)
+            self._completed.pop(identifier, None)
+            log.warning("incomplete_collection_discarded", collection_id=identifier)
 
     @staticmethod
     def build_snapshot(states: list[AircraftState], latency: float, interval: int) -> DashboardSnapshot:
@@ -91,13 +111,18 @@ class AircraftEventProcessor:
             if state.latitude is not None and state.longitude is not None
         ]
         return DashboardSnapshot(
-            status="healthy", aircraft_tracked=len(states),
-            aircraft_with_position=len(mappable), airborne=len(airborne),
-            on_ground=len(states) - len(airborne), countries=len(countries),
+            status="healthy",
+            aircraft_tracked=len(states),
+            aircraft_with_position=len(mappable),
+            airborne=len(airborne),
+            on_ground=len(states) - len(airborne),
+            countries=len(countries),
             average_altitude_m=round(sum(altitudes) / len(altitudes), 1) if altitudes else 0,
             average_speed_kmh=round(sum(speeds) / len(speeds), 1) if speeds else 0,
-            ingestion_rate=round(len(states) / interval, 1), last_updated=datetime.now(UTC),
-            provider_latency_ms=round(latency, 1), message="Live telemetry is flowing normally",
+            ingestion_rate=round(len(states) / interval, 1),
+            last_updated=datetime.now(UTC),
+            provider_latency_ms=round(latency, 1),
+            message="Live telemetry is flowing normally",
             top_countries=[{"country": country, "count": count} for country, count in countries.most_common(8)],
             aircraft=mappable,
         )
