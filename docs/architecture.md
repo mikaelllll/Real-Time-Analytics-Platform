@@ -20,3 +20,5 @@ Redis is deliberately used for ephemeral, latency-sensitive dashboard state. Pos
 ## Scaling path
 
 The portfolio deployment keeps collection and delivery together to fit Codespaces. At larger scale, the collector, Kafka consumers, WebSocket gateway, and aggregation workers can be separated. Kafka partitions provide horizontal consumer parallelism, and PostgreSQL history can be partitioned by collection time.
+
+Dashboard aircraft use a compact projection that omits ingestion-only fields. WebSocket clients receive a new payload only when the provider snapshot or health state changes, rather than repeatedly downloading an unchanged global data set.
