@@ -18,10 +18,25 @@ class AircraftState(BaseModel):
     category: int | None = None
 
 
+class MapAircraft(BaseModel):
+    """Compact aircraft representation sent to dashboard clients."""
+
+    icao24: str
+    callsign: str | None = None
+    origin_country: str
+    longitude: float
+    latitude: float
+    altitude_m: float | None = None
+    on_ground: bool
+    velocity_ms: float | None = None
+    heading: float | None = None
+
+
 class DashboardSnapshot(BaseModel):
     status: str = "starting"
     provider: str = "OpenSky Network"
     aircraft_tracked: int = 0
+    aircraft_with_position: int = 0
     airborne: int = 0
     on_ground: int = 0
     countries: int = 0
@@ -32,4 +47,4 @@ class DashboardSnapshot(BaseModel):
     provider_latency_ms: float | None = None
     message: str = "Waiting for the first OpenSky collection"
     top_countries: list[dict[str, int | str]] = Field(default_factory=list)
-    aircraft: list[AircraftState] = Field(default_factory=list)
+    aircraft: list[MapAircraft] = Field(default_factory=list)
