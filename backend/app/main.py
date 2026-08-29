@@ -18,22 +18,46 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await initialise_database()
     store = SnapshotStore()
     collector = OpenSkyCollector(settings, store)
     processor = AircraftEventProcessor(settings, store)
-    app.state.store = store
-    processor_task = asyncio.create_task(processor.start(), name="aircraft-processor")
-    collector_task = asyncio.create_task(collector.start(), name="opensky-collector")
-    yield
-    await collector.stop()
-    await processor.stop()
-    for task in (collector_task, processor_task):
-        task.cancel()
+    background_tasks: dict[str, asyncio.Task] = {}
+    try:
+        await initialise_database()
+        app.state.store = store
+        processor_task = asyncio.create_task(processor.start(), name="aircraft-processor")
+        background_tasks["processor"] = processor_task
+        app.state.background_tasks = background_tasks
+
+        ready_task = asyncio.create_task(processor.ready.wait(), name="processor-ready")
+        done, _ = await asyncio.wait(
+            {processor_task, ready_task},
+            timeout=30,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if processor_task in done:
+            ready_task.cancel()
+            await processor_task
+            raise RuntimeError("Kafka consumer stopped during application startup")
+        if ready_task not in done:
+            ready_task.cancel()
+            raise TimeoutError("Kafka consumer did not become ready within 30 seconds")
+        ready_task.cancel()
         with suppress(asyncio.CancelledError):
-            await task
-    await store.close()
-    await engine.dispose()
+            await ready_task
+
+        collector_task = asyncio.create_task(collector.start(), name="opensky-collector")
+        background_tasks["collector"] = collector_task
+        yield
+    finally:
+        await collector.stop()
+        for task in background_tasks.values():
+            task.cancel()
+        for task in background_tasks.values():
+            with suppress(asyncio.CancelledError):
+                await task
+        await store.close()
+        await engine.dispose()
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
