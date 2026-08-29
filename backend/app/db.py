@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import DateTime, Float, Integer, String, func
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -13,7 +15,7 @@ class CollectionRun(Base):
     __tablename__ = "collection_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    collected_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     aircraft_count: Mapped[int] = mapped_column(Integer)
     airborne_count: Mapped[int] = mapped_column(Integer)
     country_count: Mapped[int] = mapped_column(Integer)
