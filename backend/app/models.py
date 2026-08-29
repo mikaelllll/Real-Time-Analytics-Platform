@@ -8,8 +8,8 @@ class AircraftState(BaseModel):
     callsign: str | None = None
     origin_country: str
     observed_at: datetime
-    longitude: float | None = None
-    latitude: float | None = None
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
     altitude_m: float | None = None
     on_ground: bool
     velocity_ms: float | None = None
@@ -24,8 +24,8 @@ class MapAircraft(BaseModel):
     icao24: str
     callsign: str | None = None
     origin_country: str
-    longitude: float
-    latitude: float
+    longitude: float = Field(ge=-180, le=180)
+    latitude: float = Field(ge=-90, le=90)
     altitude_m: float | None = None
     on_ground: bool
     velocity_ms: float | None = None
