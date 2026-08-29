@@ -7,6 +7,7 @@ from uuid import uuid4
 import httpx
 import structlog
 from aiokafka import AIOKafkaProducer
+from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.models import AircraftState
@@ -21,6 +22,7 @@ class OpenSkyCollector:
         self.store = store
         self._stop = asyncio.Event()
         self._producer: AIOKafkaProducer | None = None
+        self._client: httpx.AsyncClient | None = None
 
     async def start(self) -> None:
         self._producer = AIOKafkaProducer(
@@ -28,34 +30,47 @@ class OpenSkyCollector:
             value_serializer=lambda value: json.dumps(value).encode(),
             acks="all",
         )
-        for attempt in range(10):
-            try:
-                await self._producer.start()
-                break
-            except Exception as exc:
-                if attempt == 9:
-                    raise
-                log.warning("kafka_not_ready", attempt=attempt + 1, error=str(exc))
-                await asyncio.sleep(2)
-        while not self._stop.is_set():
-            await self.collect_once()
-            try:
-                await asyncio.wait_for(self._stop.wait(), self.settings.collection_interval_seconds)
-            except TimeoutError:
-                pass
+        producer_started = False
+        try:
+            for attempt in range(10):
+                try:
+                    await self._producer.start()
+                    producer_started = True
+                    break
+                except Exception as exc:
+                    if attempt == 9:
+                        raise
+                    log.warning("kafka_not_ready", attempt=attempt + 1, error=str(exc))
+                    await asyncio.sleep(2)
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(25, connect=10),
+                headers={"User-Agent": "SkyStream-Analytics/1.0"},
+            )
+            while not self._stop.is_set():
+                await self.collect_once()
+                try:
+                    await asyncio.wait_for(self._stop.wait(), self.settings.collection_interval_seconds)
+                except TimeoutError:
+                    pass
+        finally:
+            if self._client is not None:
+                await self._client.aclose()
+            if producer_started:
+                await self._producer.stop()
 
     async def stop(self) -> None:
         self._stop.set()
-        if self._producer:
-            await self._producer.stop()
 
     async def collect_once(self) -> None:
         started = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=25) as client:
-                response = await client.get(self.settings.opensky_url)
-                response.raise_for_status()
+            if self._client is None:
+                raise RuntimeError("collector HTTP client is not initialized")
+            response = await self._client.get(self.settings.opensky_url)
+            response.raise_for_status()
             states = self._parse(response.json())
+            if not states:
+                raise ValueError("OpenSky returned no valid aircraft states")
             latency = (time.perf_counter() - started) * 1000
             collection_id = str(uuid4())
             if self._producer:
@@ -63,17 +78,21 @@ class OpenSkyCollector:
                     await self._producer.send(
                         self.settings.kafka_topic,
                         {
-                            "type": "aircraft_state", "collection_id": collection_id,
+                            "type": "aircraft_state",
+                            "collection_id": collection_id,
                             "data": state.model_dump(mode="json"),
                         },
-                        key=state.icao24.encode(),
+                        key=collection_id.encode(),
                     )
                 await self._producer.send(
                     self.settings.kafka_topic,
                     {
-                        "type": "collection_complete", "collection_id": collection_id,
-                        "latency_ms": latency, "expected_count": len(states),
+                        "type": "collection_complete",
+                        "collection_id": collection_id,
+                        "latency_ms": latency,
+                        "expected_count": len(states),
                     },
+                    key=collection_id.encode(),
                 )
                 await self._producer.flush()
             log.info("collection_published", collection_id=collection_id, aircraft=len(states))
@@ -91,11 +110,23 @@ class OpenSkyCollector:
         for row in payload.get("states") or []:
             if not row or len(row) < 17:
                 continue
-            result.append(AircraftState(
-                icao24=row[0], callsign=row[1].strip() if row[1] else None,
-                origin_country=row[2] or "Unknown", observed_at=observed_at,
-                longitude=row[5], latitude=row[6], altitude_m=row[7], on_ground=bool(row[8]),
-                velocity_ms=row[9], heading=row[10], vertical_rate_ms=row[11],
-                category=row[17] if len(row) > 17 else None,
-            ))
+            try:
+                result.append(
+                    AircraftState(
+                        icao24=row[0],
+                        callsign=row[1].strip() if row[1] else None,
+                        origin_country=row[2] or "Unknown",
+                        observed_at=observed_at,
+                        longitude=row[5],
+                        latitude=row[6],
+                        altitude_m=row[7],
+                        on_ground=bool(row[8]),
+                        velocity_ms=row[9],
+                        heading=row[10],
+                        vertical_rate_ms=row[11],
+                        category=row[17] if len(row) > 17 else None,
+                    )
+                )
+            except ValidationError:
+                continue
         return result
