@@ -15,8 +15,6 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "redpanda:9092"
     kafka_topic: str = "aircraft.states.v1"
     opensky_url: str = "https://opensky-network.org/api/states/all"
-    opensky_client_id: str | None = None
-    opensky_client_secret: str | None = None
     collection_interval_seconds: int = Field(default=30, ge=10, le=3600)
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
