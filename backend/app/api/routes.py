@@ -1,18 +1,30 @@
 import asyncio
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import JSONResponse
+
+from app.models import DashboardSnapshot
 
 router = APIRouter()
 
 
 @router.get("/health")
-async def health(request: Request) -> dict:
-    redis_ok = await request.app.state.store.ping()
-    return {"status": "healthy" if redis_ok else "degraded", "redis": redis_ok}
+async def health(request: Request) -> JSONResponse:
+    try:
+        redis_ok = await request.app.state.store.ping()
+    except Exception:
+        redis_ok = False
+    tasks = request.app.state.background_tasks
+    task_health = {name: not task.done() for name, task in tasks.items()}
+    healthy = redis_ok and all(task_health.values())
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": "healthy" if healthy else "degraded", "redis": redis_ok, **task_health},
+    )
 
 
-@router.get("/snapshot")
-async def snapshot(request: Request):
+@router.get("/snapshot", response_model=DashboardSnapshot)
+async def snapshot(request: Request) -> DashboardSnapshot:
     return await request.app.state.store.get()
 
 
