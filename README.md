@@ -52,6 +52,22 @@ flowchart LR
 
 Redpanda supplies the Kafka-compatible broker while remaining practical inside a Codespace. Events use their collection ID as the partition key, keeping every global snapshot and its completion boundary ordered together. Redis serves the current dashboard snapshot with low latency, while PostgreSQL persists collection-level history.
 
+## Key engineering decisions
+
+- **Use a Kafka-compatible event boundary:** collection and analytics are decoupled so telemetry ingestion does not depend on dashboard consumers or database write latency.
+- **Partition by collection ID:** every aircraft snapshot and its completion marker stay ordered together, allowing the consumer to aggregate complete collections deterministically.
+- **Assign storage by access pattern:** Redis serves the latest dashboard state, while PostgreSQL stores durable collection-level history.
+- **Deliver live state through WebSockets:** clients receive updates without repeatedly polling the API.
+- **Preserve honest provider state:** failures retain the last valid snapshot and visibly mark it stale rather than generating substitute aircraft.
+
+## Trade-offs
+
+- Redpanda provides Kafka semantics in a compact environment, but still adds more operational overhead than an in-process queue.
+- Collection-level partitioning preserves snapshot order but does not maximize parallelism within one global collection.
+- Redis makes current-state reads fast, while recovery still depends on rebuilding or repopulating ephemeral state.
+- Anonymous OpenSky access removes setup friction but provides stricter limits and variable availability.
+- Docker Compose demonstrates the event flow on one host; production streaming would require multi-node capacity planning and stronger failure isolation.
+
 ## Documentation
 
 - [System architecture](docs/architecture.md)
