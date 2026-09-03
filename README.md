@@ -6,6 +6,10 @@ The project demonstrates asynchronous Python, event-driven architecture, purpose
 
 > OpenSky is an independent public data provider. Availability and completeness vary, and origin/destination airports are not part of the live state-vector feed. The dashboard never generates substitute aircraft when the provider is unavailable.
 
+## Application preview
+
+[![SkyStream real-time aircraft analytics dashboard](docs/images/application-preview.webp)](docs/images/application-preview.webp)
+
 ## Run in GitHub Codespaces
 
 1. Select **Code → Codespaces → Create codespace on main**.
