@@ -6,9 +6,13 @@ The project demonstrates asynchronous Python, event-driven architecture, purpose
 
 > OpenSky is an independent public data provider. Availability and completeness vary, and origin/destination airports are not part of the live state-vector feed. The dashboard never generates substitute aircraft when the provider is unavailable.
 
-## Application preview
+## Explore the dashboard
 
-[![SkyStream real-time aircraft analytics dashboard](docs/images/application-preview.webp)](docs/images/application-preview.webp)
+- **Live Map:** search callsigns or aircraft IDs, combine filters, select an aircraft, and center or follow it. Switch between metric and aviation units.
+- **Analytics:** inspect recorded aircraft counts, provider latency, and registration-country distribution.
+- **About:** explore the streaming architecture and source links.
+
+The dashboard distinguishes connection status from data freshness and labels retained positions when telemetry is stale. Global totals remain separate from filtered map results. See the [dashboard guide](docs/frontend.md) for behavior and verification steps.
 
 ## Run in GitHub Codespaces
 

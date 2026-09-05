@@ -1,9 +1,11 @@
 import asyncio
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
-from app.models import DashboardSnapshot
+from app.db import CollectionRun, Session
+from app.models import CollectionHistory, DashboardSnapshot
 
 router = APIRouter()
 
@@ -42,3 +44,14 @@ async def dashboard_stream(websocket: WebSocket) -> None:
             await asyncio.sleep(1)
     except WebSocketDisconnect:
         return
+
+
+@router.get("/history", response_model=list[CollectionHistory])
+async def history(limit: int = Query(default=120, ge=1, le=500)) -> list[CollectionHistory]:
+    async with Session() as session:
+        rows = (
+            await session.scalars(
+                select(CollectionRun).order_by(CollectionRun.collected_at.desc(), CollectionRun.id.desc()).limit(limit)
+            )
+        ).all()
+        return [CollectionHistory.model_validate(row, from_attributes=True) for row in reversed(rows)]
