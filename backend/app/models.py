@@ -48,3 +48,11 @@ class DashboardSnapshot(BaseModel):
     message: str = "Waiting for the first OpenSky collection"
     top_countries: list[dict[str, int | str]] = Field(default_factory=list)
     aircraft: list[MapAircraft] = Field(default_factory=list)
+
+
+class CollectionHistory(BaseModel):
+    collected_at: datetime
+    aircraft_count: int
+    airborne_count: int
+    country_count: int
+    provider_latency_ms: float

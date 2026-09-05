@@ -15,3 +15,7 @@ The backend uses Python 3.12 and FastAPI with an application lifespan that owns 
 Structured JSON logs include collection outcome, aircraft count, latency, and failures without storing secrets. The collector reuses a bounded asynchronous HTTP client, rejects impossible coordinates, and keeps the last valid snapshot when the provider fails. Kafka offsets are committed only after a complete collection has been aggregated and persisted, so a process interruption cannot acknowledge half a snapshot.
 
 The test suite covers valid and malformed provider rows, coordinate validation, uncapped map delivery, records without coordinates, and incomplete Kafka collections. CI enforces Ruff linting and formatting.
+
+## Recorded collection history
+
+`GET /api/v1/history?limit=120` returns the most recent collection records in chronological order. `limit` must be between 1 and 500. Each record includes `collected_at`, `aircraft_count`, `airborne_count`, `country_count`, and `provider_latency_ms`. It queries PostgreSQL collection aggregates, not per-aircraft history, and powers the dashboard's historical charts.
